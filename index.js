@@ -335,6 +335,8 @@ app.get("/", (req, res) => {
         status.textContent = 'Device verified successfully.';
         if (params.get('redirect')) window.location.href = params.get('redirect');
         } catch (e) {
+        verifyBtn.disabled = false;
+        //hcaptcha.
         verifyBtn.textContent = "Retry Verification ✔";
         status.textContent = 'Device verification failed.';
         alert(JSON.stringify(e.response?.data || e.message))
