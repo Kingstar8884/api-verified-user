@@ -325,7 +325,7 @@ app.get("/", (req, res) => {
 
         try {
         await axios.post("/api/verify", {
-          acessToken: params.get("acessToken"),
+          accessToken: params.get("accessToken"),
           webhook: params.get("webhook"),
           token: TOKEN,
           nonce: NONCE,
@@ -372,9 +372,9 @@ app.post("/nonce", globalLimiter, async (req, res) => {
 });
 
 app.post("/api/verify", globalLimiter, async (req, res) => {
-  const { acessToken, webhook, token, nonce, fingerprint } = req.body;
+  const { accessToken, webhook, token, nonce, fingerprint } = req.body;
   
-  if (!ACCESS_TOKENS.includes(acessToken))
+  if (!ACCESS_TOKENS.includes(accessToken))
     return res.status(400).json({ error: 'Invalid Access Token' });
 
   if (!webhook || !isValidWebhook(webhook))
