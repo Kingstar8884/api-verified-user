@@ -1,20 +1,47 @@
 const express = require('express');
 const axios = require('axios');
-const {verify} = require('hcaptcha');
+const { verify } = require('hcaptcha');
+const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 const app = express();
+app.use(express.json());
 const PORT = 3000;
 
-const clientIds = ["12345-Demo-Client"];
+const pendingTokens = new Set();
+const usedTokens = new Set();
+const nonces = new Map();
 
-app.use(express.json());
+
+const accessTokens = ["12345-Demo-Client"];
+const NONCE_EXPIRY_MS = 10_000;
+
+const globalLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  message: { error: 'Too many verification attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const perClientLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  keyGenerator: req => `${getIP(req)}:${req.body.clientId || 'unknown'}`,
+  message: { error: 'Too many verification attempts for this client, please wait.' }
+});
+
+const perIPLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  keyGenerator: req => getIP(req),
+  message: { error: 'Too many requests from this IP, please wait.' }
+});
 
 function getIP(req) {
-  return (
-    req.headers['cf-connecting-ip'] ||
-    req.headers['x-forwarded-for']?.split(',')[0] ||
-    req.socket.remoteAddress
-  );
+  return req.headers['cf-connecting-ip'] ||
+         req.headers['x-forwarded-for']?.split(',')[0] ||
+         req.socket.remoteAddress;
 }
 
 function isValidWebhook(url) {
@@ -24,6 +51,10 @@ function isValidWebhook(url) {
   } catch {
     return false;
   }
+}
+
+function hashUA(ua) {
+  return crypto.createHash('sha256').update(ua).digest('hex');
 }
 
 
@@ -210,7 +241,16 @@ const renderCaptcha = () => {
 window.onload = () => renderCaptcha();
 const btn = document.querySelector('.verify-btn');
 const status = document.querySelector('.status');
-function onCaptchaSuccess(token) {
+async function onCaptchaSuccess(token) {
+  try {
+    const res = await axios.post('/nonce', { token });
+    window.__nonce = res.data?.nonce;
+  } catch (e){
+    alert('Captcha verification failed due to: '+e.response?.data?.error);
+    hcaptcha.reset(captchaWidget);
+    return;
+  }
+  
   btn.disabled = false;
   btn.textContent = 'Verify Device';
   status.textContent = 'Now verify your device to continue...';
@@ -228,12 +268,14 @@ btn.onclick = async () => {
       clientId,
       webhook,
       userAgent: navigator.userAgent,
-      token: window.__token
+      token: window.__token,
+      nonce: window.__nonce
     });
     btn.textContent = 'Verified ✓';
     status.textContent = 'Device verified successfully.';
   } catch (e){
-    btn.disabled = false;
+    window.__retry = true;
+    hcaptcha.reset(captchaWidget);
     btn.textContent = 'Re-try Device Verification';
     status.textContent = 'Device verified failed.';
     alert('Verification failed due to: '+e.response?.data?.error);
@@ -242,48 +284,72 @@ btn.onclick = async () => {
 </script>
 </body>
 </html>`);
+
+  const now = Date.now();
+  for (const [nonce, data] of nonces) {
+    if (data.expiresAt < now) nonces.delete(nonce);
+  };
 });
 
 
-app.post('/api/verify', async (req, res) => {
-  const ip = getIP(req);
-  const { clientId, webhook, userAgent, token } = req.body;
-  if (!clientId) return res.status(400).json({ error: 'Missing client ID!' });
-  if (!webhook) return res.status(400).json({ error: 'Missing webhook Url!' });
-  if (!userAgent) return res.status(400).json({ error: 'Missing user agent!' });
-  if (!isValidWebhook(webhook)) {
-    return res.status(400).json({ error: 'Invalid webhook!' });
-  }
-  if (!clientIds.includes(clientId)){
-    return res.status(400).json({ error: 'Unregistered client ID!' });
-  };
-  if (!token) return res.status(400).json({ error: 'Missing captcha token! Refresh the page and try again.' });
+app.post('/nonce', perIPLimiter, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Missing captcha token!' });
+  if (pendingTokens.has(token) || usedTokens.has(token)) return res.status(400).json({ error: 'Token already used!' });
 
   const isHuman = await verify(process.env.HCAPTCHA_SECRET_KEY, token);
+  if (!isHuman || !isHuman.success) return res.status(400).json({ error: 'Invalid captcha!' });
 
-  console.log(isHuman);
-  if (!isHuman || !isHuman.success) return res.status(400).json({ error: 'Invalid captcha! Refresh the page and try again.' });
-  
+  pendingTokens.add(token);
+
+  const nonce = crypto.randomUUID();
+  const expiresAt = Date.now() + NONCE_EXPIRY_MS;
+  nonces.set(nonce, {
+    ip: getIP(req),
+    uaHash: hashUA(req.headers['user-agent']),
+    expiresAt
+  });
+
+  return res.json({ nonce });
+});
+
+
+app.post('/api/verify', globalLimiter, perClientLimiter, async (req, res) => {
+  const { clientId, webhook, userAgent, token, nonce } = req.body || {};
+  const ip = getIP(req);
+  if (!nonce || !nonces.has(nonce)) return res.status(400).json({ error: 'Invalid or missing nonce!' });
+  const nonceData = nonces.get(nonce);
+  if (Date.now() > nonceData.expiresAt) {
+    nonces.delete(nonce);
+    return res.status(400).json({ error: 'Nonce expired!' });
+  }
+  if (nonceData.ip !== ip) return res.status(400).json({ error: 'Nonce IP mismatch!' });
+  if (nonceData.uaHash !== hashUA(userAgent)) return res.status(400).json({ error: 'Nonce User-Agent mismatch!' });
+  nonces.delete(nonce);
+
+  if (!token || !pendingTokens.has(token)) return res.status(400).json({ error: 'Invalid token!' });
+  pendingTokens.delete(token);
+
+  if (usedTokens.has(token)) return res.status(400).json({ error: 'Token replay detected!' });
+  usedTokens.add(token);
+
+  if (!accessToken || !accessTokens.includes(accessToken)) return res.status(400).json({ error: 'Invalid client ID!' });
+  if (!webhook || !isValidWebhook(webhook)) return res.status(400).json({ error: 'Invalid webhook!' });
+
   try {
+    
     await axios.post(webhook, {
       ip,
       userAgent,
       timestamp: new Date().toISOString(),
-      about: `API developed by kingstar. Telegram: @gill728`
+      about: 'API developed by kingstar. Telegram: @gill728'
     });
-  } catch (e){
+    
+  } catch (e) {
     console.error('Webhook error:', e.response?.data || e.message);
     return res.status(500).json({ error: 'Failed to send webhook!' });
   }
-  
   return res.sendStatus(200);
 });
 
-app.post('/webhook', (req, res) => {
-  console.log('Webhook received:', req.body);
-  res.json({ ok: true });
-});
-
-app.listen(PORT, () => {
-  console.log('Running → http://localhost:' + PORT);
-});
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
