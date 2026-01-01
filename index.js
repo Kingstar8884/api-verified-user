@@ -322,6 +322,7 @@ app.get("/", (req, res) => {
 
         const params = new URLSearchParams(location.search);
 
+        try {
         await axios.post("/api/verify", {
           acessToken: params.get("acessToken"),
           webhook: params.get("webhook"),
@@ -329,11 +330,16 @@ app.get("/", (req, res) => {
           nonce: NONCE,
           fingerprint: FP,
         });
-
         verifyBtn.textContent = "Verified ✔";
         status.textContent = 'Device verified successfully.';
-
         if (params.get('redirect')) window.location.href = params.get('redirect');
+        } catch (e) {
+        verifyBtn.textContent = "Retry Verification ✔";
+        status.textContent = 'Device verification failed.';
+        alert(JSON.stringify(e.response?.data || e.message))
+        }
+
+        
       };
     </script>
   </body>
