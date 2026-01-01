@@ -269,7 +269,8 @@ app.post('/api/verify', async (req, res) => {
     await axios.post(webhook, {
       ip,
       userAgent,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      about: `API developed by kingstar. Telegram: @gill728`
     });
   } catch (e){
     console.error('Webhook error:', e.response?.data || e.message);
