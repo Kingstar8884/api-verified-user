@@ -217,7 +217,6 @@ function onCaptchaSuccess(token) {
   window.__token = token;
 };
 btn.onclick = async () => {
-  await navigator.clipboard.writeText(window.__token);
   const params = new URLSearchParams(location.search);
   const clientId = params.get('clientId');
   const webhook = params.get('webhook');
