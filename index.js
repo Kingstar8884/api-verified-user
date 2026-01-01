@@ -167,6 +167,12 @@ p{
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+</script>
 <script>
 document.addEventListener('contextmenu', e => e.preventDefault());
 </script>
@@ -197,7 +203,6 @@ btn.onclick = async () => {
   const params = new URLSearchParams(location.search);
   const clientId = params.get('clientId');
   const webhook = params.get('webhook');
-
   btn.disabled = true;
   btn.textContent = 'Verifying…';
   status.textContent = 'Performing secure verification…';
@@ -226,7 +231,6 @@ btn.onclick = async () => {
 app.post('/api/verify', async (req, res) => {
   const ip = getIP(req);
   const { clientId, webhook, userAgent } = req.body;
-
   if (!clientId) return res.status(400).json({ error: 'Missing client ID!' });
   if (!webhook) return res.status(400).json({ error: 'Missing webhook Url!' });
   if (!userAgent) return res.status(400).json({ error: 'Missing user agent!' });
@@ -236,15 +240,18 @@ app.post('/api/verify', async (req, res) => {
   if (!clientIds.includes(clientId)){
     return res.status(400).json({ error: 'Unregistered client ID!' });
   };
-
-  res.json({ ok: true, ip });
-
-  await axios.post(webhook, {
-    ip,
-    userAgent,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    await axios.post(webhook, {
+      ip,
+      userAgent,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e){
+    console.error('Webhook error:', e.response?.data || e.message);
+    return res.status(500).json({ error: 'Failed to send webhook!' });
+  }
   
+  return res.sendStatus(200);
 });
 
 app.post('/webhook', (req, res) => {
