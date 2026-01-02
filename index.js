@@ -406,11 +406,14 @@ app.post("/api/verify", globalLimiter, async (req, res) => {
 
   console.log(fingerprint, fpHash);
   
-  await axios.post(webhook, {
-    fingerprint: fpHash,
-    timestamp: new Date().toISOString()
-  });
-
+  try {
+    await axios.post(webhook, {
+      fingerprint: fpHash,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e){
+    return res.status(503).json({ error: "Webhook receiver failed" });
+  }
   res.sendStatus(200);
 });
 
