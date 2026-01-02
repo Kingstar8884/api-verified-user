@@ -305,7 +305,7 @@ app.get("/", (req, res) => {
             const r = await axios.post("/nonce", { token: t, fingerprint: FP });
             NONCE = r.data.nonce;
             verifyBtn.disabled = false;
-            verifyBtn.textContent = 'Verify Device';
+            if (!window.__retry) verifyBtn.textContent = 'Verify Device';
             status.textContent = 'Now verify your device to continue...';
           },
         });
@@ -330,8 +330,9 @@ app.get("/", (req, res) => {
         status.textContent = 'Device verified successfully.';
         if (params.get('redirect')) window.location.href = params.get('redirect');
         } catch (e) {
+        window.__retry = true;
         hcaptcha.reset(CAPTCHA_WID)
-        verifyBtn.textContent = "Retry Verification ✔";
+        verifyBtn.textContent = "Re-try Verification ✔";
         status.textContent = 'Device verification failed. Resolve captcha and Re-try Verification';
         alert(JSON.stringify(e.response?.data || e.message))
         }
