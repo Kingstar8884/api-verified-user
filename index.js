@@ -302,8 +302,17 @@ app.get("/", (req, res) => {
           callback: async (t) => {
             TOKEN = t;
             FP = await getFingerprint();
-            const r = await axios.post("/nonce", { token: t, fingerprint: FP });
-            NONCE = r.data.nonce;
+            try {
+              const r = await axios.post("/nonce", { token: t, fingerprint: FP });
+              NONCE = r.data.nonce;
+            } catch (e){
+              window.__retry = true;
+              hcaptcha.reset(CAPTCHA_WID)
+              verifyBtn.textContent = "Re-try Verification ✔";
+              status.textContent = 'Device verification failed. Resolve captcha and Re-try Verification';
+              alert(JSON.stringify(e.response?.data || e.message))
+              return;
+            }
             verifyBtn.disabled = false;
             if (!window.__retry) verifyBtn.textContent = 'Verify Device';
             status.textContent = 'Now verify your device to continue...';
@@ -315,9 +324,7 @@ app.get("/", (req, res) => {
         verifyBtn.disabled = true;
         verifyBtn.textContent = "Verifying…";
         status.textContent = 'Performing secure verification…';
-
         const params = new URLSearchParams(location.search);
-
         try {
         await axios.post("/api/verify", {
           accessToken: params.get("accessToken"),
@@ -336,8 +343,6 @@ app.get("/", (req, res) => {
         status.textContent = 'Device verification failed. Resolve captcha and Re-try Verification';
         alert(JSON.stringify(e.response?.data || e.message))
         }
-
-        
       };
     </script>
   </body>
