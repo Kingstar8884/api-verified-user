@@ -10,20 +10,15 @@ const PORT = 3000;
 app.set('trust proxy', true);
 app.use(express.json());
 
-/* ================= CONFIG ================= */
 
 const ACCESS_TOKENS = ["12345-Demo-Client"];
 const NONCE_EXPIRY_MS = 10_000;
-
-/* ================= MEMORY STORES ================= */
-/* NOTE: For production, replace with Redis / DB */
 
 const nonces = new Map(); // nonce -> { fpHash, expiresAt }
 const pendingTokens = new Set(); // captcha tokens
 const usedTokens = new Set(); // replay protection
 const fingerprints = new Map(); // fpHash -> count (multi detect)
 
-/* ================= RATE LIMITS ================= */
 
 const globalLimiter = rateLimit({
   windowMs: 60_000,
@@ -32,7 +27,6 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-/* ================= HELPERS ================= */
 
 function hash(input) {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -296,13 +290,14 @@ app.get("/", (req, res) => {
 
       let TOKEN = null,
         NONCE = null,
-        FP = null;
+        FP = null,
+        CAPTCHA_WID = null;
 
       const verifyBtn = document.querySelector(".verify-btn");
       const status = document.querySelector(".status");
 
       window.onload = async () => {
-        hcaptcha.render("captchaWidget", {
+        CAPTCHA_WID = hcaptcha.render("captchaWidget", {
           sitekey: "994c2296-e6a8-4d28-9b52-df1cb73e48a6",
           callback: async (t) => {
             TOKEN = t;
@@ -335,10 +330,9 @@ app.get("/", (req, res) => {
         status.textContent = 'Device verified successfully.';
         if (params.get('redirect')) window.location.href = params.get('redirect');
         } catch (e) {
-        verifyBtn.disabled = false;
-        //hcaptcha.
+        hcaptcha.reset(CAPTCHA_WID)
         verifyBtn.textContent = "Retry Verification ✔";
-        status.textContent = 'Device verification failed.';
+        status.textContent = 'Device verification failed. Resolve captcha and Re-try Verification';
         alert(JSON.stringify(e.response?.data || e.message))
         }
 
