@@ -277,7 +277,6 @@ app.get("/", (req, res) => {
       async function getFingerprint() {
         return sha256(
           [
-            navigator.userAgent,
             navigator.language,
             navigator.platform,
             navigator.hardwareConcurrency,
