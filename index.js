@@ -11,7 +11,7 @@ app.set('trust proxy', true);
 app.use(express.json());
 
 
-const ACCESS_TOKENS = ["12345-Demo-Client"];
+const ACCESS_TOKENS = ["12345-Demo-Client", "Acjek"];
 const NONCE_EXPIRY_MS = 10_000;
 
 const nonces = new Map(); // nonce -> { fpHash, expiresAt }
